@@ -1,0 +1,9 @@
+workspace
+build
+backup
+.carlitos.conf
+
+*.jpg
+*.mp4
+
+

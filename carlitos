@@ -1,0 +1,140 @@
+#!/bin/bash
+
+# FUNCTION DECLARATIONS
+function init {
+	if [ ! -f ./.carlitos.conf ]; then
+		echo "Please provide the IP address of the Carlitos Server!"
+		read serverAddress
+		echo $serverAddress >> ./.carlitos.conf
+	fi
+
+	mkdir -p ./backup
+	mkdir -p ./workspace
+}
+
+function update {
+
+	serverAddress=`cat ./.carlitos.conf`
+	# 198.51.100.151
+	rsync -P -a --ignore-existing pi@$serverAddress:/home/pi/workspace/carlitos/photospace/*.jpg ./backup/
+	echo "Total size of backup directory: $(du -sh ./backup | cut -f1)"
+}
+
+function clean {
+	rm -f ./workspace/*.jpg
+	rm -f ./build/*.jpg
+	rm -f *.mp4
+	echo "Workspace is cleaned up."
+}
+
+function add {
+	if [ -z "$1" ]; then
+		echo "Please define a date range."
+		exit
+	elif [ $1 = "all" ]; then
+		cp -n ./backup/*.jpg ./workspace/
+		printf "All items added."
+	elif [ $1 = "today" ]; then
+		DATE=`date +%Y-%m-%d`
+		cp -n ./backup/$DATE*.jpg ./workspace/
+		printf "$DATE added."
+	elif [ $1 = "month" ]; then
+		DATE=`date +%Y-%m`
+		cp -n ./backup/$DATE*.jpg ./workspace/
+		printf "$DATE added."
+	else
+		cp -n ./backup/$1*.jpg ./workspace/
+		printf " $1 added."
+	fi
+
+	echo " There are $(ls -1 workspace | wc -l) items in the workspace."
+}
+
+function build {
+	if [ "$(ls -1 workspace | wc -l)" = "0" ]; then
+		echo "Workspace is empty, please add photos first."
+ 	else
+		declare speed;
+		if [ -z "$1" ]; then
+			speed=1
+		else
+			speed=$1
+		fi
+
+		rm -f ./build/*.jpg
+		declare i=0
+		declare n=0
+		declare files=`ls ./workspace/*.jpg`
+
+		for file in $files;
+		do
+			if [ $((n%speed)) -eq 0 ]; then
+				cp "$file" "./build/$i".jpg;
+				i=$((i+1));
+			fi
+
+			n=$((n+1));
+	 	done
+
+		ffmpeg -f image2 -r 60 -i ./build/%d.jpg -an -c:v h264 -crf 0 -vf fps=fps=60 carlitos.mp4
+	fi
+}
+
+function play {
+	cvlc --fullscreen --loop carlitos.mp4 &> /dev/null
+}
+
+function status {
+	echo "Backup directory - Size: $(du -sh ./backup | cut -f1), number of items: $(ls -1 ./backup | wc -l)"
+	echo "There are $(ls -1 workspace | wc -l) items in the workspace."
+	echo "Latest Update: "
+}
+
+
+# START POINT
+
+init
+
+case "$1" in
+	update)
+		update
+		;;
+	clean)
+		clean
+		;;
+	add)
+		add $2
+		;;
+	build)
+		build $2
+		;;
+	play)
+		play
+		;;
+	status)
+		status
+		;;
+	all)
+		clean
+		update
+		add all
+		build 4
+		play
+		;;
+	*)
+
+		echo "   _____          _____  _      _____ _______ ____   _____             _____ _      _____ "
+		echo "  / ____|   /\   |  __ \| |    |_   _|__   __/ __ \ / ____|           / ____| |    |_   _|"
+		echo " | |       /  \  | |__) | |      | |    | | | |  | | (___    ______  | |    | |      | |  "
+		echo " | |      / /\ \ |  _  /| |      | |    | | | |  | |\___ \  |______| | |    | |      | |  "
+		echo " | |____ / ____ \| | \ \| |____ _| |_   | | | |__| |____) |          | |____| |____ _| |_ "
+		echo "  \_____/_/    \_\_|  \_\______|_____|  |_|  \____/|_____/            \_____|______|_____|"
+
+		echo "Usage: "
+		echo " * clean:               Cleans up the workspace for new video build."
+		echo " * update:              Updates the backup directory from the Raspberry PI."
+		echo " * add <DATE STRING>:   Adds the given time period to the workspace, if the date string."
+		echo "                        is not provided, adds everything from the backup directory."
+		echo " * build <SPEED>:       Creates the video using the content of the workspace."
+		echo " * play:                Plays the video using VLC player in loop, in full screen mode."
+esac
